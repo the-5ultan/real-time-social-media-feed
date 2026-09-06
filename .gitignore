@@ -1,0 +1,45 @@
+# Runtime files
+runtime/pids/*
+runtime/locks/*
+runtime/pipes/*
+
+# Logs
+logs/*.log
+logs/*.log.*
+
+# Data files (keep directory structure)
+data/users/*
+data/posts/*
+data/events/*
+data/feed/*
+data/queue/*
+data/stats/*
+
+# Frontend build artifacts (if any)
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test output
+tests/output/
+tests/*.tmp
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Backup files
+*.backup
+*.orig
