@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run script for Real-Time Social Media Feed
-# Starts the complete system: backend processes and frontend
+# Starts the complete system: backend processes and frontend with API server
 
 set -Eeuo pipefail
 
@@ -33,7 +33,7 @@ PRODUCER_PIDS=()
 WORKER_PIDS=()
 SIMULATOR_PID=""
 RESOURCE_MONITOR_PID=""
-FRONTEND_PID=""
+API_SERVER_PID=""
 
 # =============================================================================
 # CLEANUP
@@ -79,6 +79,12 @@ cleanup() {
         wait "$RESOURCE_MONITOR_PID" 2>/dev/null || true
     fi
     
+    # Stop API server
+    if [[ -n "$API_SERVER_PID" ]] && kill -0 "$API_SERVER_PID" 2>/dev/null; then
+        kill -TERM "$API_SERVER_PID" 2>/dev/null
+        wait "$API_SERVER_PID" 2>/dev/null || true
+    fi
+    
     # Cleanup runtime
     "${PROJECT_ROOT}/backend/system/cleanup.sh" 2>/dev/null || true
     
@@ -104,33 +110,26 @@ start_backend() {
     mkfifo "$WORKER_FIFO" 2>/dev/null || true
     mkfifo "$CONTROL_FIFO" 2>/dev/null || true
     
-    # Start process manager
+    # Start process manager (it will start producers and workers)
     print_step "Starting process manager..."
     "${PROJECT_ROOT}/backend/processes/manager.sh" start &
     MANAGER_PID=$!
     save_pid "manager" "$MANAGER_PID"
     log_process "manager" "START" "$MANAGER_PID" "Process manager started"
     
-    sleep 1
+    sleep 2
     
-    # Start producers
-    print_step "Starting ${DEFAULT_PRODUCERS} producer(s)..."
-    for i in $(seq 1 "$DEFAULT_PRODUCERS"); do
-        "${PROJECT_ROOT}/backend/processes/producer.sh" "producer-$i" &
-        local pid=$!
+    # Get actual producer/worker PIDs from manager
+    for pid_file in "${PIDS_DIR}"/producer-*.pid; do
+        [[ -f "$pid_file" ]] || continue
+        local pid=$(cat "$pid_file")
         PRODUCER_PIDS+=("$pid")
-        save_pid "producer-$i" "$pid"
-        log_process "producer-$i" "START" "$pid" "Producer started"
     done
     
-    # Start workers
-    print_step "Starting ${DEFAULT_WORKERS} worker(s)..."
-    for i in $(seq 1 "$DEFAULT_WORKERS"); do
-        "${PROJECT_ROOT}/backend/processes/worker.sh" "worker-$i" &
-        local pid=$!
+    for pid_file in "${PIDS_DIR}"/worker-*.pid; do
+        [[ -f "$pid_file" ]] || continue
+        local pid=$(cat "$pid_file")
         WORKER_PIDS+=("$pid")
-        save_pid "worker-$i" "$pid"
-        log_process "worker-$i" "START" "$pid" "Worker started"
     done
     
     print_success "Backend started (Manager: $MANAGER_PID, Producers: ${#PRODUCER_PIDS[@]}, Workers: ${#WORKER_PIDS[@]})"
@@ -156,26 +155,25 @@ start_resource_monitor() {
     print_success "Resource monitor started (PID: $RESOURCE_MONITOR_PID)"
 }
 
-start_frontend() {
-    print_step "Starting frontend..."
+start_api_server() {
+    print_step "Starting API server (frontend + backend API)..."
     
-    # Check if we have a simple HTTP server
     if command -v python3 >/dev/null 2>&1; then
-        cd "$PROJECT_ROOT/frontend"
-        python3 -m http.server 8080 >/dev/null 2>&1 &
-        FRONTEND_PID=$!
-        save_pid "frontend" "$FRONTEND_PID"
-        print_success "Frontend server started at http://localhost:8080 (PID: $FRONTEND_PID)"
+        # Start Python API server which serves frontend and API
+        cd "$PROJECT_ROOT"
+        python3 "${SCRIPT_DIR}/api_server.py" 8080 >"${LOGS_DIR}/api_server.log" 2>&1 &
+        API_SERVER_PID=$!
+        save_pid "api_server" "$API_SERVER_PID"
+        log_process "api_server" "START" "$API_SERVER_PID" "API server started"
+        
+        # Wait for server to start
+        sleep 2
+        
+        print_success "API server started at http://localhost:8080 (PID: $API_SERVER_PID)"
         print_step "Open http://localhost:8080 in your browser"
-    elif command -v npx >/dev/null 2>&1; then
-        cd "$PROJECT_ROOT/frontend"
-        npx serve -p 8080 >/dev/null 2>&1 &
-        FRONTEND_PID=$!
-        save_pid "frontend" "$FRONTEND_PID"
-        print_success "Frontend server started at http://localhost:8080 (PID: $FRONTEND_PID)"
     else
-        print_warn "No HTTP server found. Open frontend/index.html directly in browser."
-        print_warn "Install python3 or node.js for auto-server."
+        print_error "Python3 is required for the API server. Please install Python 3."
+        exit 1
     fi
 }
 
@@ -185,15 +183,15 @@ show_status() {
     echo -e "${CYAN}  SYSTEM RUNNING${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     echo
-    echo "Process Manager:  PID $MANAGER_PID"
-    echo "Producers:        ${#PRODUCER_PIDS[@]} processes (PIDs: ${PRODUCER_PIDS[*]})"
-    echo "Workers:          ${#WORKER_PIDS[@]} processes (PIDs: ${WORKER_PIDS[*]})"
-    [[ -n "$SIMULATOR_PID" ]] && echo "Simulator:        PID $SIMULATOR_PID"
-    [[ -n "$RESOURCE_MONITOR_PID" ]] && echo "Resource Monitor: PID $RESOURCE_MONITOR_PID"
-    [[ -n "$FRONTEND_PID" ]] && echo "Frontend Server:  PID $FRONTEND_PID (http://localhost:8080)"
+    echo "Process Manager:   PID $MANAGER_PID"
+    echo "Producers:         ${#PRODUCER_PIDS[@]} processes (PIDs: ${PRODUCER_PIDS[*]})"
+    echo "Workers:           ${#WORKER_PIDS[@]} processes (PIDs: ${WORKER_PIDS[*]})"
+    [[ -n "$SIMULATOR_PID" ]] && echo "Simulator:         PID $SIMULATOR_PID"
+    [[ -n "$RESOURCE_MONITOR_PID" ]] && echo "Resource Monitor:  PID $RESOURCE_MONITOR_PID"
+    [[ -n "$API_SERVER_PID" ]] && echo "API Server:        PID $API_SERVER_PID (http://localhost:8080)"
     echo
-    echo "Data Directory:   $DATA_DIR"
-    echo "Logs Directory:   $LOGS_DIR"
+    echo "Data Directory:    $DATA_DIR"
+    echo "Logs Directory:    $LOGS_DIR"
     echo "Runtime Directory: $RUNTIME_DIR"
     echo
     echo -e "${YELLOW}Press Ctrl+C to stop the system${NC}"
@@ -222,7 +220,7 @@ main() {
     start_backend
     start_simulator
     start_resource_monitor
-    start_frontend
+    start_api_server
     
     show_status
     

@@ -60,9 +60,9 @@ stop_process_by_pidfile() {
 stop_all_processes() {
     print_step "Stopping all processes..."
     
-    # Stop in reverse order: simulator, producers, workers, manager, monitor, frontend
+    # Stop in reverse order: simulator, api_server, producers, workers, manager, monitor
     stop_process_by_pidfile "simulator"
-    stop_process_by_pidfile "frontend"
+    stop_process_by_pidfile "api_server"
     stop_process_by_pidfile "resource_monitor"
     
     # Stop all producers
@@ -84,8 +84,7 @@ stop_all_processes() {
     # Kill any remaining processes from our project
     pkill -f "backend/processes/" 2>/dev/null || true
     pkill -f "backend/system/resource_monitor" 2>/dev/null || true
-    pkill -f "python3 -m http.server 8080" 2>/dev/null || true
-    pkill -f "npx serve -p 8080" 2>/dev/null || true
+    pkill -f "api_server.py" 2>/dev/null || true
 }
 
 cleanup_runtime() {

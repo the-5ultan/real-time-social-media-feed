@@ -81,18 +81,22 @@ producer_shutdown() {
     stats_decrement "active_producers"
 }
 
-# Get random user
+# Get random user (uses user_service function, falls back to defaults)
 get_random_user() {
-    local user=$(get_random_user)
-    if [[ -n "$user" && "$user" != "null" ]]; then
-        echo "$user"
-    else
-        # Fallback to default users
-        local idx=$((RANDOM % ${#DEFAULT_USERS[@]}))
-        local username="${DEFAULT_USERS[$idx]}"
-        local user_id="user_${username,,}"
-        json_object "user_id" "$user_id" "username" "$username"
+    # Try to get user from user service
+    local users_index=$(read_file "$USERS_FILE")
+    local count=$(echo "$users_index" | jq 'length')
+    if [[ $count -gt 0 ]]; then
+        local index=$((RANDOM % count))
+        echo "$users_index" | jq --argjson idx "$index" '.[$idx]'
+        return 0
     fi
+    
+    # Fallback to default users
+    local idx=$((RANDOM % ${#DEFAULT_USERS[@]}))
+    local username="${DEFAULT_USERS[$idx]}"
+    local user_id="user_${username,,}"
+    json_object "user_id" "$user_id" "username" "$username"
 }
 
 # Select random event type based on weights
