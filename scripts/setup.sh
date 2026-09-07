@@ -8,6 +8,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 source "${PROJECT_ROOT}/backend/config.sh"
+source "${PROJECT_ROOT}/backend/utils/common.sh"
 
 # Colors
 readonly RED='\033[0;31m'
